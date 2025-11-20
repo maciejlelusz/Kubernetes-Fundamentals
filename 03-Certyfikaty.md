@@ -1,25 +1,24 @@
-# Certyfikaty
+# Certyfikaty – Kubernetes Fundamentals
 
 W tym labie stworzymy infrastrukturę PKI używając CloudFlare's PKI toolkit, cfssl, następnie machniemy Certificate Authority i wygenerujemy certyfikaty TLS dla następujących komponentów: etcd, kube-apiserver, kube-controller-manager, kube-scheduler, kubelet i kube-proxy.
 
-Stwórz katalog zawierający certyfikaty na potrzeby klastra Kubernetes:
+## Stworzenie katalogu na certyfikaty
 ```
 mkdir conf/
 cd conf
 ```
-Zdefiniuj zmienne:
+
+## Zmienne środowiskowe
 ```
 WORKER01_IP='[worker01-IP]'
 WORKER02_IP='[worker02-IP]'
 MASTER01_IP='[master01-IP]'
 EXTERNAL_IP='[HAProxy-IP]'
 ```
-## Certificate Authority
 
-Wygeneruj plik konfiguracyjny CA, certyfiakty, i prywatny klucz:
+## Certificate Authority
 ```
 {
-
 cat > ca-config.json <<EOF
 {
   "signing": {
@@ -56,19 +55,12 @@ cat > ca-csr.json <<EOF
 EOF
 
 cfssl gencert -initca ca-csr.json | cfssljson -bare ca
-
 }
 ```
-## Certyfikaty Client i Server
 
-Wygenerujemy certyfikaty klienta i serwera  każdego komponentu Kubernetesa dla użytkownika admin.
-
-### Certyfikat dla admina
-
-Wygeneruj certyfiakt klancki dla administratora i klucz prywatny:
+## Certyfikaty Client i Server – admin
 ```
 {
-
 cat > admin-csr.json <<EOF
 {
   "CN": "admin",
@@ -88,18 +80,11 @@ cat > admin-csr.json <<EOF
 }
 EOF
 
-cfssl gencert \
-  -ca=ca.pem \
-  -ca-key=ca-key.pem \
-  -config=ca-config.json \
-  -profile=kubernetes \
-  admin-csr.json | cfssljson -bare admin
-
+cfssl gencert   -ca=ca.pem   -ca-key=ca-key.pem   -config=ca-config.json   -profile=kubernetes   admin-csr.json | cfssljson -bare admin
 }
 ```
-### Certyfikaty Kubelet Client
 
-Kolejnym certem jest certyfikat klienta kubelet dla każdego workera, na początku worker01:
+## Certyfikaty kubelet – worker01
 ```
 cat > worker01-csr.json <<EOF
 {
@@ -120,15 +105,10 @@ cat > worker01-csr.json <<EOF
 }
 EOF
 
-cfssl gencert \
-  -ca=ca.pem \
-  -ca-key=ca-key.pem \
-  -config=ca-config.json \
-  -hostname=worker01,${WORKER01_IP},${WORKER01_IP} \
-  -profile=kubernetes \
-  worker01-csr.json | cfssljson -bare worker01
+cfssl gencert   -ca=ca.pem   -ca-key=ca-key.pem   -config=ca-config.json   -hostname=worker01,${WORKER01_IP},${WORKER01_IP}   -profile=kubernetes   worker01-csr.json | cfssljson -bare worker01
 ```
-Następnie worker02:
+
+## Certyfikaty kubelet – worker02
 ```
 cat > worker02-csr.json <<EOF
 {
@@ -149,20 +129,12 @@ cat > worker02-csr.json <<EOF
 }
 EOF
 
-cfssl gencert \
-  -ca=ca.pem \
-  -ca-key=ca-key.pem \
-  -config=ca-config.json \
-  -hostname=worker02,${WORKER02_IP},${WORKER02_IP} \
-  -profile=kubernetes \
-  worker02-csr.json | cfssljson -bare worker02
+cfssl gencert   -ca=ca.pem   -ca-key=ca-key.pem   -config=ca-config.json   -hostname=worker02,${WORKER02_IP},${WORKER02_IP}   -profile=kubernetes   worker02-csr.json | cfssljson -bare worker02
 ```
-### Certyfikat Controller Managera
 
-Wygenerowanie certyfikatu klienckiego dla kube-controller-manager i klucza prywatego:
+## Certyfikat kube-controller-manager
 ```
 {
-
 cat > kube-controller-manager-csr.json <<EOF
 {
   "CN": "system:kube-controller-manager",
@@ -182,21 +154,13 @@ cat > kube-controller-manager-csr.json <<EOF
 }
 EOF
 
-cfssl gencert \
-  -ca=ca.pem \
-  -ca-key=ca-key.pem \
-  -config=ca-config.json \
-  -profile=kubernetes \
-  kube-controller-manager-csr.json | cfssljson -bare kube-controller-manager
-
+cfssl gencert   -ca=ca.pem   -ca-key=ca-key.pem   -config=ca-config.json   -profile=kubernetes   kube-controller-manager-csr.json | cfssljson -bare kube-controller-manager
 }
 ```
-### Certyfiakt Kube Proxy
 
-Kolejnym elementem instalowanmy na węzłach typu worker będzie kube-proxy, ono też potrzebuje certa:
+## Certyfikat kube-proxy
 ```
 {
-
 cat > kube-proxy-csr.json <<EOF
 {
   "CN": "system:kube-proxy",
@@ -216,21 +180,13 @@ cat > kube-proxy-csr.json <<EOF
 }
 EOF
 
-cfssl gencert \
-  -ca=ca.pem \
-  -ca-key=ca-key.pem \
-  -config=ca-config.json \
-  -profile=kubernetes \
-  kube-proxy-csr.json | cfssljson -bare kube-proxy
-
+cfssl gencert   -ca=ca.pem   -ca-key=ca-key.pem   -config=ca-config.json   -profile=kubernetes   kube-proxy-csr.json | cfssljson -bare kube-proxy
 }
 ```
-### Certyfikat Scheduler
 
-Generowanie certyfikatów kube-scheduler i klucza prywatnego:
+## Certyfikat kube-scheduler
 ```
 {
-
 cat > kube-scheduler-csr.json <<EOF
 {
   "CN": "system:kube-scheduler",
@@ -250,18 +206,11 @@ cat > kube-scheduler-csr.json <<EOF
 }
 EOF
 
-cfssl gencert \
-  -ca=ca.pem \
-  -ca-key=ca-key.pem \
-  -config=ca-config.json \
-  -profile=kubernetes \
-  kube-scheduler-csr.json | cfssljson -bare kube-scheduler
-
+cfssl gencert   -ca=ca.pem   -ca-key=ca-key.pem   -config=ca-config.json   -profile=kubernetes   kube-scheduler-csr.json | cfssljson -bare kube-scheduler
 }
 ```
-### Certyfikat Kubernetes API Server 
 
-Generowanie certyfikatu dla Kubernetes API Server znajdującego się na węzłach typu master:
+## Certyfikat Kubernetes API Server
 ```
 {
 cat > kubernetes-csr.json <<EOF
@@ -283,22 +232,13 @@ cat > kubernetes-csr.json <<EOF
 }
 EOF
 
-cfssl gencert \
-  -ca=ca.pem \
-  -ca-key=ca-key.pem \
-  -config=ca-config.json \
-  -hostname=10.32.0.1,10.240.0.10,10.240.0.11,10.240.0.12,${EXTERNAL_IP},${MASTER01_IP},127.0.0.1,haproxy,master01,kubernetes.localdomain,kubernetes.default \
-  -profile=kubernetes \
-  kubernetes-csr.json | cfssljson -bare kubernetes
-
+cfssl gencert   -ca=ca.pem   -ca-key=ca-key.pem   -config=ca-config.json   -hostname=10.32.0.1,${EXTERNAL_IP},${MASTER01_IP},127.0.0.1,haproxy,master01,kubernetes.default   -profile=kubernetes   kubernetes-csr.json | cfssljson -bare kubernetes
 }
 ```
-## Service Account Key Pair
 
-Wygeneruj certyfikaty dla service-account i klucz prywatny:
+## Service Account Key Pair
 ```
 {
-
 cat > service-account-csr.json <<EOF
 {
   "CN": "service-accounts",
@@ -318,22 +258,14 @@ cat > service-account-csr.json <<EOF
 }
 EOF
 
-cfssl gencert \
-  -ca=ca.pem \
-  -ca-key=ca-key.pem \
-  -config=ca-config.json \
-  -profile=kubernetes \
-  service-account-csr.json | cfssljson -bare service-account
-
+cfssl gencert   -ca=ca.pem   -ca-key=ca-key.pem   -config=ca-config.json   -profile=kubernetes   service-account-csr.json | cfssljson -bare service-account
 }
 ```
-## Prześlij plik na serwery
 
-Następnie skopjuj certyfikaty do odpowiednich nodów:
+## Przesyłanie certyfikatów na nody
 ```
 scp -i ../Kubernetes_Fundamentals.pem ca.pem worker01-key.pem worker01.pem ubuntu@${WORKER01_IP}:~
 scp -i ../Kubernetes_Fundamentals.pem ca.pem worker02-key.pem worker02.pem ubuntu@${WORKER02_IP}:~
 scp -i ../Kubernetes_Fundamentals.pem ca.pem ca-key.pem kubernetes-key.pem kubernetes.pem service-account-key.pem service-account.pem ubuntu@${MASTER01_IP}:~
 ```
-## Podsumowanie
-Mamy wszystkie certy, czas na następny moduł [Pliki konfiguracyjne](https://github.com/inleo-pl/Warsztat-Kubernetes-Fundamentals/blob/master/04-Pliki-konfiguracyjne.md).
+
