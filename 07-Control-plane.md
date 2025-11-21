@@ -2,10 +2,6 @@
 
 Zainstalujemy następujące elmenty na naszym nodzie master: Kubernetes API Server, Scheduler i Controller Manager. Jeżeli chcecie dodać więcej węzłów master, komendy te musicie powielić na wszytskich z nich, wówczas osiągniecie nadmiarowość i HA.
 
-Dla przypomnienia nasze środowisko na tym etapie wygląda następująco:
-
-![K8S-Architecture-Diagram-etcd](https://inleo.pl/wp-content/uploads/2018/08/K8S-Architecture-Diagram-etcd-3.png)
-
 ## Instalacja Control Plane
 
 Połącz się z serwerem master01 i ściągnij niezbędne rzeczy:
@@ -210,6 +206,4 @@ kubectl get componentstatuses --kubeconfig admin.kubeconfig
 
 Gdzie jesteśmy, dokąd zmierzamy? :D Jest już całekiem nieźle nie?
 
-![K8S-Architecture-Diagram-Control-Plane](https://inleo.pl/wp-content/uploads/2018/08/K8S-Architecture-Diagram-Control-Plane-3.png)
-
-Koljenym krokiem jest skonfigurowanie [Workerów](https://github.com/inleo-pl/Warsztat-Kubernetes-Fundamentals/blob/master/08-Worker-Nodes.md).
+Koljenym krokiem jest skonfigurowanie Workerów.
