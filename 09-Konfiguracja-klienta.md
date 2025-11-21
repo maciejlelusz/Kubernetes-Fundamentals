@@ -1,45 +1,114 @@
 # Konfiguracja klienta
-Wykożystamy HA Proxy jako serwer do zarządzania naszym klastrem. Dla przypomnienia infra wygląda teraz tak:
 
-![K8S-Architecture-Diagram-Worker-Nodes](https://inleo.pl/wp-content/uploads/2018/08/K8S-Architecture-Diagram-Worker-Nodes.png)
+Na koniec skonfigurujemy **klienta kubectl**, aby wygodnie zarządzać klastrem z maszyny z HAProxy.  
+HAProxy pełni tutaj rolę **jednego punktu dostępowego** do Control Plane (load balancer / reverse proxy przed API Serverami).
 
-Połącz się zatem z HAProxy i skonfiguruj jako maszynę kliencką, aby miała dostęp do klastra:
-```
+---
+
+# Przygotowanie maszyny klienckiej (HAProxy)
+
+Połącz się z maszyną z HAProxy (np. przez SSH) i przejdź do katalogu z certyfikatami oraz konfiguracją, np. `conf/`.
+
+```bash
 EXTERNAL_IP=$(hostname -i)
 cd conf/
 ```
-Przekonfiguruj klienta
-```
+
+- `EXTERNAL_IP` – adres IP HAProxy, który wystawia port 6443 i przekazuje ruch do API Servera,
+- katalog `conf/` zakładamy jako miejsce, gdzie znajdują się pliki `ca.pem`, `admin.pem`, `admin-key.pem` itd.
+
+---
+
+# Konfiguracja kubectl
+
+Teraz skonfigurujemy kubectl tak, aby:
+
+1. znał klaster (`set-cluster`),
+2. posiadał dane użytkownika (`set-credentials`),
+3. miał zdefiniowany kontekst (`set-context`),
+4. używał tego kontekstu domyślnie (`use-context`).
+
+---
+
+## 1. Konfiguracja klastra
+
+```bash
 kubectl config set-cluster kubernetes \
   --certificate-authority=ca.pem \
   --embed-certs=true \
   --server=https://${EXTERNAL_IP}:6443
 ```
-Dodaj uprawnienia:
-```
+
+- `--certificate-authority=ca.pem` – zaufany CA, który podpisał certyfikaty API Servera,
+- `--embed-certs=true` – certyfikat CA zostanie osadzony bezpośrednio w pliku kubeconfig,
+- `--server` – adres endpointu API (za HAProxy).
+
+---
+
+## 2. Dane uwierzytelniające użytkownika (admin)
+
+```bash
 kubectl config set-credentials admin \
---client-certificate=admin.pem \
---client-key=admin-key.pem
+  --client-certificate=admin.pem \
+  --client-key=admin-key.pem
 ```
-Kontekst:
-```
+
+Jest to użytkownik administracyjny, którego certyfikat został wygenerowany w jednym z poprzednich modułów.
+
+---
+
+## 3. Kontekst kubectl
+
+Tworzymy kontekst `kubernetes`, który łączy klaster `kubernetes` z użytkownikiem `admin`:
+
+```bash
 kubectl config set-context kubernetes --cluster=kubernetes --user=admin
 ```
-Skonfiguruj klienta:
-```
+
+---
+
+## 4. Ustawienie domyślnego kontekstu
+
+```bash
 kubectl config use-context kubernetes
 ```
-Sprawdz:
-```
+
+Od tego momentu wszelkie polecenia `kubectl` będą domyślnie używały:
+
+- klastra: `kubernetes`,
+- użytkownika: `admin`,
+- endpointu: `https://${EXTERNAL_IP}:6443`.
+
+---
+
+# Test połączenia z klastrem
+
+Sprawdźmy, czy klient poprawnie łączy się z API Serverem oraz czy klaster widzi węzły worker:
+
+```bash
 kubectl get nodes
 ```
-Dodajemy uprawnienia dla naszego certu wystawionego na użytkownika kubernetes:
-```
-kubectl create clusterrolebinding apiserver-kubelet-api-admin --clusterrole system:kubelet-api-admin --user kubernetes
-```
-## Podsumowanie
-Masz swój pierwszy działający klaster, który postawiłeś od początku do końca sam. Gratulacje! Tymczasem Twoja infra jest już całkiem imponująca:
 
-![K8S-Architecture-Diagram-Client](https://inleo.pl/wp-content/uploads/2018/08/K8S-Architecture-Diagram-Client.png)
+Jeśli wszystko działa poprawnie, zobaczysz listę węzłów (`master`, `worker01`, `worker02`) wraz z ich statusem, np. `Ready`.
 
-Czas puścić na nim jakieś aplikacje... momencik, zacznijmy jednak od [KubeDNS](https://github.com/inleo-pl/Warsztat-Kubernetes-Fundamentals/blob/master/10-Kube-DNS.md).
+---
+
+# Uprawnienia dla użytkownika „kubernetes”
+
+Jeżeli chcesz zezwolić użytkownikowi `kubernetes` (podpisanemu odpowiednim certyfikatem) na dostęp do kubelet API na węzłach, możesz dodać odpowiednie powiązanie ról:
+
+```bash
+kubectl create clusterrolebinding apiserver-kubelet-api-admin \
+  --clusterrole system:kubelet-api-admin \
+  --user kubernetes
+```
+
+To przyzna użytkownikowi `kubernetes` uprawnienia do wywoływania kubelet API na węzłach (np. do debugowania podów).
+
+---
+
+# Podsumowanie
+
+Masz swój **pierwszy w pełni działający klaster Kubernetes**, który postawiłeś od początku do końca sam – od certyfikatów, przez etcd, Control Plane, workery, aż po klienta. Gratulacje!
+
+Kolejnym krokiem będzie uruchomienie podstawowych usług w klastrze, zaczynając od **KubeDNS**.
