@@ -1,26 +1,66 @@
 # Węzły worker
-Moduł ten to instalacja bajerów na workerach, w module zainstalujemy: runc, gVisor, container networking plugins, containerd, kubelet i kube-proxy. Poniższe instrukcje należy wykonać na wszytkich węzłach typu worker w klastrze - w naszym przypadku worker01 i worker02, a jak byście chcieli więcej nodów... to na kazdym następnym też.
 
-Staneliśmy na tym:
+W tym module przygotujemy **węzły robocze (worker nodes)**, czyli maszyny, na których uruchamiane są kontenery z aplikacjami.  
+Zainstalujemy i skonfigurujemy:
 
-![K8S-Architecture-Diagram-Control-Plane](https://inleo.pl/wp-content/uploads/2018/08/K8S-Architecture-Diagram-Control-Plane-3.png)
+- `runc` – domyślny runtime kontenerów,
+- `gVisor` – sandboxowany runtime dla zaufania ograniczonego,
+- wtyczki **CNI** (Container Networking Interface),
+- `containerd` – demon odpowiedzialny za zarządzanie kontenerami,
+- `kubelet` – agent Kubernetes na każdym węźle,
+- `kube-proxy` – komponent odpowiedzialny za routing i reguły sieciowe.
 
-## Zależności i ustawienia systemu
+Wszystkie kroki należy wykonać **na każdym węźle typu worker** – w naszym labie: `worker01` i `worker02`.  
+Jeśli dodasz kolejne węzły, wykonaj te same instrukcje również na nich.
 
-Doinstaluj brakujace elementy na workerze:
-```
+---
+
+## Punkt wyjścia
+
+Na tym etapie Control Plane i etcd są już uruchomione. Czas dołożyć do tego prawdziwe mięso – węzły, które będą uruchamiały nasze workloady.
+
+---
+
+# Zależności i ustawienia systemu
+
+Poniższe polecenia wykonujemy na **każdym** węźle worker.
+
+---
+
+## 1. Pakiety systemowe
+
+Doinstaluj brakujące pakiety:
+
+```bash
 sudo apt-get update
 sudo apt-get -y install socat conntrack ipset
 ```
-Połącz się z worker01 i wyłącz swap:
-```
+
+- `socat` – pomocny przy tunelowaniu ruchu sieciowego,
+- `conntrack` i `ipset` – narzędzia wymagane do obsługi zaawansowanych reguł sieciowych (iptables, kube-proxy).
+
+---
+
+## 2. Wyłączenie swap
+
+Kubelet wymaga wyłączonego swapa (stabilność i przewidywalność planowania zasobów).
+
+Na każdym workerze:
+
+```bash
 sudo swapoff -a
 sudo sed -i '/ swap / s/^/#/' /etc/fstab
 ```
-## Instalacja 
 
-Ściągnij binarki:
-```
+Drugie polecenie komentuje wpis swapa w `/etc/fstab`, aby nie włączał się przy restarcie systemu.
+
+---
+
+# Instalacja komponentów
+
+## 1. Pobranie binariów
+
+```bash
 wget -q --show-progress --https-only --timestamping \
   https://github.com/kubernetes-incubator/cri-tools/releases/download/v1.0.0-beta.0/crictl-v1.0.0-beta.0-linux-amd64.tar.gz \
   https://storage.googleapis.com/kubernetes-the-hard-way/runsc \
@@ -31,8 +71,14 @@ wget -q --show-progress --https-only --timestamping \
   https://storage.googleapis.com/kubernetes-release/release/v1.10.2/bin/linux/amd64/kube-proxy \
   https://storage.googleapis.com/kubernetes-release/release/v1.10.2/bin/linux/amd64/kubelet
 ```
-Stwórz foldery instalacyjne:
-```
+
+---
+
+## 2. Tworzenie katalogów
+
+Przygotowujemy katalogi dla CNI, kubeleta, kube-proxy i Kubernetes:
+
+```bash
 sudo mkdir -p \
   /etc/cni/net.d \
   /opt/cni/bin \
@@ -41,8 +87,12 @@ sudo mkdir -p \
   /var/lib/kubernetes \
   /var/run/kubernetes
 ```
-Zainstaluj:
-```
+
+---
+
+## 3. Instalacja binariów
+
+```bash
 chmod +x kubectl kube-proxy kubelet runc.amd64 runsc
 sudo mv runc.amd64 runc
 sudo mv kubectl kube-proxy kubelet runc runsc /usr/local/bin/
@@ -50,10 +100,22 @@ sudo tar -xvf crictl-v1.0.0-beta.0-linux-amd64.tar.gz -C /usr/local/bin/
 sudo tar -xvf cni-plugins-amd64-v0.6.0.tgz -C /opt/cni/bin/
 sudo tar -xvf containerd-1.1.0.linux-amd64.tar.gz -C /
 ```
-### CNI Networking
 
-Przekonfiguruj CNI:
-```
+Po tym kroku:
+
+- `containerd` jest zainstalowany w systemie,
+- wtyczki CNI są w `/opt/cni/bin`,
+- `kubectl`, `kubelet`, `kube-proxy`, `runc` i `runsc` są dostępne w `PATH`.
+
+---
+
+# CNI Networking
+
+CNI odpowiada za konfigurację interfejsów sieciowych oraz podsieć dla podów na węzłach.
+
+## 1. Konfiguracja bridge CNI
+
+```bash
 cat <<EOF | sudo tee /etc/cni/net.d/10-bridge.conf
 {
     "cniVersion": "0.3.1",
@@ -72,8 +134,18 @@ cat <<EOF | sudo tee /etc/cni/net.d/10-bridge.conf
 }
 EOF
 ```
-Oraz loopback
-```
+
+Ta konfiguracja:
+
+- tworzy most (`bridge`) o nazwie `cnio0`,
+- przydziela podom adresy z podsieci `10.20.0.0/24`,
+- ustawia bramkę i trasę domyślną.
+
+---
+
+## 2. Konfiguracja loopback
+
+```bash
 cat <<EOF | sudo tee /etc/cni/net.d/99-loopback.conf
 {
     "cniVersion": "0.3.1",
@@ -81,13 +153,26 @@ cat <<EOF | sudo tee /etc/cni/net.d/99-loopback.conf
 }
 EOF
 ```
-### Containerd
-Stwórz katalog dla containerd:
-```
+
+Loopback CNI zapewnia, że pody mają poprawnie skonfigurowany interfejs `lo`.
+
+---
+
+# Containerd
+
+`containerd` jest demonem odpowiedzialnym za zarządzanie cyklem życia kontenerów – kubelet komunikuje się z nim poprzez CRI.
+
+## 1. Katalog konfiguracyjny
+
+```bash
 sudo mkdir -p /etc/containerd/
 ```
-Wrzuć konfig:
-```
+
+---
+
+## 2. Konfiguracja containerd
+
+```bash
 cat << EOF | sudo tee /etc/containerd/config.toml
 [plugins]
   [plugins.cri.containerd]
@@ -102,8 +187,17 @@ cat << EOF | sudo tee /etc/containerd/config.toml
       runtime_root = "/run/containerd/runsc"
 EOF
 ```
-Stwórz plik containerd.service dla systemd:
-```
+
+Powyżej:
+
+- `default_runtime` używa `runc` do zwykłych kontenerów,
+- `untrusted_workload_runtime` wykorzystuje `runsc` (gVisor) dla mniej zaufanych obciążeń.
+
+---
+
+## 3. Jednostka systemd dla containerd
+
+```bash
 cat <<EOF | sudo tee /etc/systemd/system/containerd.service
 [Unit]
 Description=containerd container runtime
@@ -126,16 +220,31 @@ LimitCORE=infinity
 WantedBy=multi-user.target
 EOF
 ```
-### Kubelet
-Skopjuj niezbędne pliki
-```
+
+---
+
+# Kubelet
+
+`kubelet` to agent działający na każdym węźle worker, odpowiedzialny za uruchamianie podów oraz raportowanie stanu węzła do API Servera.
+
+## 1. Kopiowanie certyfikatów i kubeconfigu
+
+Na każdym workerze:
+
+```bash
 cd /home/ubuntu/
 sudo mv ${HOSTNAME}-key.pem ${HOSTNAME}.pem /var/lib/kubelet/
 sudo mv ${HOSTNAME}.kubeconfig /var/lib/kubelet/kubeconfig
 sudo mv ca.pem /var/lib/kubernetes/
 ```
-Stwórz kubelet-config.yaml:
-```
+
+Zakładamy, że nazwa hosta (`${HOSTNAME}`) odpowiada nazwie węzła (np. `worker01`).
+
+---
+
+## 2. Konfiguracja kubeleta
+
+```bash
 cat <<EOF | sudo tee /var/lib/kubelet/kubelet-config.yaml
 kind: KubeletConfiguration
 apiVersion: kubelet.config.k8s.io/v1beta1
@@ -157,8 +266,12 @@ tlsCertFile: "/var/lib/kubelet/${HOSTNAME}.pem"
 tlsPrivateKeyFile: "/var/lib/kubelet/${HOSTNAME}-key.pem"
 EOF
 ```
-Stwórz plik kubelet.service dla systemd:
-```
+
+---
+
+## 3. Jednostka systemd dla kubelet
+
+```bash
 cat <<EOF | sudo tee /etc/systemd/system/kubelet.service
 [Unit]
 Description=Kubernetes Kubelet
@@ -183,14 +296,25 @@ RestartSec=5
 WantedBy=multi-user.target
 EOF
 ```
-### Kubernetes Proxy
-Przenieś pliki:
-```
+
+---
+
+# Kubernetes Proxy
+
+`kube-proxy` zarządza regułami sieciowymi (np. iptables), dzięki którym ruch do usług Kubernetes (Services) trafia do właściwych podów.
+
+## 1. Przekazanie kubeconfigu
+
+```bash
 cd /home/ubuntu
 sudo mv kube-proxy.kubeconfig /var/lib/kube-proxy/kubeconfig
 ```
-Stwórz plik kube-proxy-config.yaml:
-```
+
+---
+
+## 2. Konfiguracja kube-proxy
+
+```bash
 cat <<EOF | sudo tee /var/lib/kube-proxy/kube-proxy-config.yaml
 kind: KubeProxyConfiguration
 apiVersion: kubeproxy.config.k8s.io/v1alpha1
@@ -200,8 +324,12 @@ mode: "iptables"
 clusterCIDR: "10.0.0.0/24"
 EOF
 ```
-Teraz czas na plik kube-proxy.service dla systemd:
-```
+
+---
+
+## 3. Jednostka systemd dla kube-proxy
+
+```bash
 cat <<EOF | sudo tee /etc/systemd/system/kube-proxy.service
 [Unit]
 Description=Kubernetes Kube Proxy
@@ -217,20 +345,36 @@ RestartSec=5
 WantedBy=multi-user.target
 EOF
 ```
-### Odpal seriwsy
-```
+
+---
+
+# Uruchomienie serwisów
+
+Na każdym węźle worker:
+
+```bash
 sudo systemctl daemon-reload
 sudo systemctl enable containerd kubelet kube-proxy
 sudo systemctl start containerd kubelet kube-proxy
 ```
-## Weryfikacja
-Wejdz na master01 i wpisz:
-```
+
+---
+
+# Weryfikacja
+
+Na węźle `master01` sprawdzamy, czy węzły poprawnie zarejestrowały się w klastrze:
+
+```bash
 kubectl get nodes --kubeconfig admin.kubeconfig
 ```
-## Podsumowanie
-Uff.. kawał roboty, ale teraz jest już naprawdę dobrze:
 
-![K8S-Architecture-Diagram-Worker-Nodes](https://inleo.pl/wp-content/uploads/2018/08/K8S-Architecture-Diagram-Worker-Nodes.png)
+Jeśli wszystko się udało, zobaczysz `worker01`, `worker02` ze statusem `Ready` (po krótkiej chwili od startu).
 
-Teraz czas na skonfigurowanie [klienta](https://github.com/inleo-pl/Warsztat-Kubernetes-Fundamentals/blob/master/09-Konfiguracja-klienta.md).
+---
+
+# Podsumowanie
+
+To był solidny kawał roboty – ale w tej chwili mamy już kompletne środowisko: Control Plane, etcd i węzły worker.
+
+Kolejny krok to przygotowanie **klienta** (wygodnej konfiguracji `kubectl`) na Twojej stacji roboczej:  
+https://github.com/inleo-pl/Warsztat-Kubernetes-Fundamentals/blob/master/09-Konfiguracja-klienta.md
