@@ -1,39 +1,99 @@
-## Uruchomienie etcd
+# Uruchomienie etcd
 
-Wszytskie elementy Kubernetesa są stateless. Jedyne miejsce gdzie trzymane są dane to etcd. Należy go uruchomić na każdym węźle typu master. W labie mamy jeden, jednak jak byście chcieli dołaczyć więcej w celu uzyskania niezawodności należy odpalić poniższe polecenia na każdym kolejnym węźle.
+W Kubernetesie wszystkie komponenty kontrolne są stateless – ich konfiguracja i stan klastra są przechowywane w jednym, kluczowym miejscu: **w etcd**.  
+To rozproszona, wysoko dostępna baza kluczy-wartości, na której opiera się cały Control Plane.
 
-Przygotowaliśmy już sporo elementów, ale nasze środowisko wciąż wygląda ubogo... ale niemartw się za chwilę dorzucimy do niego trochę elementów, tymczasem jesteśmy tu:
+W środowisku produkcyjnym etcd uruchamia się na kilku węzłach master, aby zapewnić wysoką dostępność (HA).  
+W naszym labie dysponujemy jednym masterem, jednak proces wdrożenia pozostaje identyczny dla kolejnych węzłów.
 
-![K8S-Architecture-Diagram-HA-Proxy](https://inleo.pl/wp-content/uploads/2018/08/K8S-Architecture-Diagram-HAproxy-2.png)
+---
 
-Logujemy się na węzeł master01 i sciągamy niezbędne pliki:
+## Aktualna architektura
+
+Do tej pory przygotowaliśmy certyfikaty, kubeconfigi oraz szyfrowanie, ale Control Plane wciąż nie działa — brakuje etcd, czyli serca klastra.
+
+---
+
+## Instalacja etcd na węźle master01
+
+Logujemy się na węzeł `master01`, gdzie uruchomimy instancję etcd.
+
+---
+
+### 1. Pobranie binariów etcd
+
+Pobieramy stabilną wersję etcd:
+
+```bash
+wget -q --show-progress --https-only --timestamping \
+"https://github.com/coreos/etcd/releases/download/v3.3.5/etcd-v3.3.5-linux-amd64.tar.gz"
 ```
-wget -q --show-progress --https-only --timestamping "https://github.com/coreos/etcd/releases/download/v3.3.5/etcd-v3.3.5-linux-amd64.tar.gz"
-```
-Rozpakowujemy je:
-```
+
+---
+
+### 2. Rozpakowanie archiwum
+
+```bash
 tar xvzf etcd-v3.3.5-linux-amd64.tar.gz
 ```
-Przenosimy do docelowej lokalizacji:
-```
+
+---
+
+### 3. Instalacja binariów
+
+Przenosimy pliki wykonywalne do standardowej lokalizacji:
+
+```bash
 sudo mv etcd-v3.3.5-linux-amd64/etcd* /usr/local/bin/
 ```
-Tworzymy folder konfguracji:
-```
+
+---
+
+### 4. Przygotowanie katalogów
+
+Tworzymy katalogi konfiguracyjne i dane:
+
+```bash
 sudo mkdir -p /etc/etcd /var/lib/etcd
 ```
-Kopjujemy certy:
-```
+
+---
+
+### 5. Kopiowanie certyfikatów
+
+Przenosimy certyfikaty potrzebne do szyfrowanej komunikacji w klastrze etcd:
+
+```bash
 cd /home/ubuntu/
 sudo cp ca.pem kubernetes-key.pem kubernetes.pem /etc/etcd/
 ```
-Definujemy zmienne:
-```
+
+To zapewnia:
+
+- **TLS między klientami a serwerem etcd**,  
+- **TLS między węzłami klastra etcd (peer-to-peer)**.
+
+---
+
+### 6. Definiowanie zmiennych
+
+Ustawiamy podstawowe zmienne identyfikujące instancję:
+
+```bash
 ETCD_NAME=$(hostname -s)
 INTERNAL_IP=$(hostname -i)
 ```
-Tworzymy plik konfiguracji:
-```
+
+- `ETCD_NAME` — nazwa nodu (np. `master01`)
+- `INTERNAL_IP` — adres IP nodu w sieci wewnętrznej
+
+---
+
+### 7. Tworzenie usługi systemd dla etcd
+
+Tworzymy plik jednostki `systemd`, który kontroluje pracę etcd:
+
+```bash
 cat <<EOF | sudo tee /etc/systemd/system/etcd.service
 [Unit]
 Description=etcd
@@ -65,25 +125,51 @@ RestartSec=5
 WantedBy=multi-user.target
 EOF
 ```
-Przeładuj serwis etcd i uruchom na starcie:
-```
+
+### Omówienie kluczowych parametrów:
+
+| Parametr | Znaczenie |
+|---------|-----------|
+| `--peer-*` | Ustawienia komunikacji w klastrze etcd (HA) |
+| `--listen-client-urls` | Adresy, na których etcd przyjmuje zapytania klientów |
+| `--advertise-client-urls` | Adresy ogłaszane pozostałym komponentom |
+| `--data-dir` | Katalog przechowywania danych etcd |
+| `--initial-cluster` | Definicja wszystkich węzłów etcd w klastrze |
+
+---
+
+## 8. Uruchomienie usługi
+
+Ładujemy nową jednostkę systemd, włączamy autostart i uruchamiamy etcd:
+
+```bash
 {
   sudo systemctl daemon-reload
   sudo systemctl enable etcd
   sudo systemctl start etcd
 }
 ```
-Zweryfikuj czy etcd działa:
-```
+
+---
+
+## 9. Weryfikacja działania etcd
+
+Sprawdzamy, czy etcd poprawnie działa i jest dostępny:
+
+```bash
 sudo ETCDCTL_API=3 etcdctl member list \
   --endpoints=https://127.0.0.1:2379 \
   --cacert=/etc/etcd/ca.pem \
   --cert=/etc/etcd/kubernetes.pem \
   --key=/etc/etcd/kubernetes-key.pem
 ```
+
+Jeśli konfiguracja została wykonana prawidłowo, powinniśmy zobaczyć listę członków klastra (w naszym labie — jednego).
+
+---
+
 ## Podsumowanie
-Yey! Mamy etcd na pokładzie, nasze środowisko wygląda teraz tak:
 
-![K8S-Architecture-Diagram-etcd](https://inleo.pl/wp-content/uploads/2018/08/K8S-Architecture-Diagram-etcd-3.png)
+Świetnie! Etcd działa, a nasz klaster zyskuje centralne, bezpieczne miejsce przechowywania stanu.  
 
-Czas na grubą konfigurację, zaczynamy od [Control Plane](https://github.com/inleo-pl/Warsztat-Kubernetes-Fundamentals/blob/master/07-Control-plane.md).
+Czas przejść do kolejnego kroku i rozpocząć konfigurację **Control Plane**:  
