@@ -1,9 +1,14 @@
 # Pliki konfiguracyjne
 
-## Pliki konfiguracyjne kubelet
+W tym module przygotujemy zestaw plików konfiguracyjnych (`kubeconfig`) wymaganych przez poszczególne komponenty klastra Kubernetes. Pliki te określają m.in. sposób uwierzytelnienia, adres API Servera oraz kontekst używany przez daną usługę.
 
-Musimy skonfigurować kubelet na każdym węźle klastra typu worker, na początku generujemy kubeconfig dla kubelets. Na poczatku worker01:
-```
+---
+
+## Kubelet – pliki konfiguracyjne
+
+Każdy węzeł typu *worker* musi otrzymać własny plik konfiguracyjny dla usługi **kubelet**. Zaczynamy od `worker01`:
+
+```bash
 {
   kubectl config set-cluster kubernetes \
     --certificate-authority=ca.pem \
@@ -25,8 +30,10 @@ Musimy skonfigurować kubelet na każdym węźle klastra typu worker, na począt
   kubectl config use-context default --kubeconfig=worker01.kubeconfig
 }
 ```
-Następnie worker02:
-```
+
+Konfiguracja dla `worker02`:
+
+```bash
 {
   kubectl config set-cluster kubernetes \
     --certificate-authority=ca.pem \
@@ -48,10 +55,12 @@ Następnie worker02:
   kubectl config use-context default --kubeconfig=worker02.kubeconfig
 }
 ```
-## Pliki konfiguracyjne kube-proxy
 
-Tworzymy następnie konfig dla kube-proxy:
-```
+---
+
+## Kube-proxy – pliki konfiguracyjne
+
+```bash
 {
   kubectl config set-cluster kubernetes \
     --certificate-authority=ca.pem \
@@ -73,10 +82,12 @@ Tworzymy następnie konfig dla kube-proxy:
   kubectl config use-context default --kubeconfig=kube-proxy.kubeconfig
 }
 ```
-## Pliki konfiguracyjne kube-controller-manager
 
-Tworzymy pliki konfiguracyjne dla kube-controller-manager:
-```
+---
+
+## Kube-controller-manager – pliki konfiguracyjne
+
+```bash
 {
   kubectl config set-cluster kubernetes \
     --certificate-authority=ca.pem \
@@ -98,10 +109,12 @@ Tworzymy pliki konfiguracyjne dla kube-controller-manager:
   kubectl config use-context default --kubeconfig=kube-controller-manager.kubeconfig
 }
 ```
-## Pliki konfiguracyjne kube-scheduler
 
-Tworzymy pliki konfiguracyjne dla kube-scheduler:
-```
+---
+
+## Kube-scheduler – pliki konfiguracyjne
+
+```bash
 {
   kubectl config set-cluster kubernetes \
     --certificate-authority=ca.pem \
@@ -123,10 +136,12 @@ Tworzymy pliki konfiguracyjne dla kube-scheduler:
   kubectl config use-context default --kubeconfig=kube-scheduler.kubeconfig
 }
 ```
-## Pliki konfiguracyjne admin
 
-Tworzymy pliki konfiguracyjne dla kube-scheduler:
-```
+---
+
+## Admin – pliki konfiguracyjne
+
+```bash
 {
   kubectl config set-cluster kubernetes \
     --certificate-authority=ca.pem \
@@ -148,13 +163,20 @@ Tworzymy pliki konfiguracyjne dla kube-scheduler:
   kubectl config use-context default --kubeconfig=admin.kubeconfig
 }
 ```
-## Prześlij plik na serwery
 
-Następnie skopjuj certyfikaty do odpowiednich nodów:
-```
+---
+
+## Przesyłanie plików na węzły
+
+```bash
 scp -i ../Kubernetes_Fundamentals.pem worker01.kubeconfig kube-proxy.kubeconfig ubuntu@${WORKER01_IP}:~
 scp -i ../Kubernetes_Fundamentals.pem worker02.kubeconfig kube-proxy.kubeconfig ubuntu@${WORKER02_IP}:~
 scp -i ../Kubernetes_Fundamentals.pem admin.kubeconfig kube-controller-manager.kubeconfig kube-scheduler.kubeconfig ubuntu@${MASTER01_IP}:~
 ```
+
+---
+
 ## Podsumowanie
-Konfigi gotowe, czas zaszyfrować ten bałagan... Czyli następny moduł - [szyfrowanie](https://github.com/inleo-pl/Warsztat-Kubernetes-Fundamentals/blob/master/05-Szyfrowanie.md)!
+
+Wszystkie wymagane pliki konfiguracyjne zostały przygotowane i przesłane.  
+Możemy przejść do kolejnego modułu – **Szyfrowanie**.
