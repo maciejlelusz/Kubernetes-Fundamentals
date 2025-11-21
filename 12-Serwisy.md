@@ -1,16 +1,47 @@
 # Serwisy
-Wyświetlamy serwisy:
-```
+
+**Service** w Kubernetes zapewnia stabilny punkt dostępu do aplikacji działających w podach.  
+W tym module:
+
+- sprawdzisz istniejące serwisy,
+- wdrożysz Kubernetes Dashboard,
+- utworzysz użytkownika z uprawnieniami administracyjnymi,
+- wystawisz Dashboard przez NodePort,
+- połączysz się do niego przez HAProxy.
+
+---
+
+# Podstawowe operacje na serwisach
+
+Wyświetlenie listy serwisów w klastrze:
+
+```bash
 kubectl get services
 ```
-Powołaj serwis:
-```
+
+Na tym etapie powinieneś widzieć m.in. `kubernetes` oraz `kube-dns`.
+
+---
+
+# Instalacja Kubernetes Dashboard
+
+Wdrażamy Dashboard za pomocą oficjalnego manifestu:
+
+```bash
 kubectl create -f https://raw.githubusercontent.com/kubernetes/dashboard/master/src/deploy/recommended/kubernetes-dashboard.yaml
 ```
-Dodawanie użytkowika, który będzie miał dostęp do Dashbord:
-```
-vi kubernetes-dashboard-admin.yaml
 
+Po chwili serwis i pody powinny pojawić się w przestrzeni `kube-system`.
+
+---
+
+# Tworzenie użytkownika administracyjnego
+
+Aby połączyć się z Dashboardem, potrzebny jest użytkownik z odpowiednimi uprawnieniami.
+
+Utwórz plik `kubernetes-dashboard-admin.yaml`:
+
+```yaml
 apiVersion: v1
 kind: ServiceAccount
 metadata:
@@ -30,50 +61,95 @@ subjects:
   name: admin-user
   namespace: kube-system
 ```
-Dodajemy użytkownika:
-```
+
+Zastosuj manifest:
+
+```bash
 kubectl create -f kubernetes-dashboard-admin.yaml
 ```
-Pozykujemy token:
-```
-kubectl -n kube-system describe secret $(kubectl -n kube-system get secret | grep admin-user | awk '{print $1}')
-```
-Edytujmy konfig, aby dopiąć się do NodePort:
-```
-kubectl -n kube-system edit service kubernetes-dashboard
 
-# Please edit the object below. Lines beginning with a '#' will be ignored,
-# and an empty file will abort the edit. If an error occurs while saving this file will be
-# reopened with the relevant failures.
-#
-apiVersion: v1
-kind: Service
-metadata:
-  creationTimestamp: 2018-07-11T23:08:28Z
-  labels:
-    k8s-app: kubernetes-dashboard
-  name: kubernetes-dashboard
-  namespace: kube-system
-  resourceVersion: "4075"
-  selfLink: /api/v1/namespaces/kube-system/services/kubernetes-dashboard
-  uid: 525509f7-855f-11e8-863e-2cc260628564
+---
+
+# Pobranie tokenu logowania
+
+Token logowania dla konta admin-user:
+
+```bash
+kubectl -n kube-system describe secret \
+$(kubectl -n kube-system get secret | grep admin-user | awk '{print $1}')
+```
+
+Zachowaj token — będziesz go potrzebować podczas logowania do Dashboardu.
+
+---
+
+# Wystawienie Dashboardu przez NodePort
+
+Domyślnie Dashboard działa jako `ClusterIP`, więc nie jest dostępny spoza klastra.  
+Zmodyfikujemy go, aby był wystawiony jako `NodePort`.
+
+Edytujemy usługę:
+
+```bash
+kubectl -n kube-system edit service kubernetes-dashboard
+```
+
+Odnajdź sekcję:
+
+```yaml
 spec:
-  clusterIP: 10.32.0.140
-  ports:
-  - port: 443
-    protocol: TCP
-    targetPort: 8443
-  selector:
-    k8s-app: kubernetes-dashboard
-  sessionAffinity: None
   type: ClusterIP
-status:
-  loadBalancer: {}
 ```
-Wymieniamy type: ClusterIP na type: NodePort. Następnie
+
+i zmień na:
+
+```yaml
+spec:
+  type: NodePort
 ```
+
+Zapisz i zamknij edytor.
+
+Następnie sprawdź, jaki NodePort został przydzielony:
+
+```bash
 kubectl -n kube-system get service kubernetes-dashboard
 ```
-Zaktualziuj HAProxy i wejdz na stronkę... nie zapomnij o tym że masz iśc przez https://zewnetrzny.adrestwojego.ha.proxy:8080
-## Podsumowanie
-Czas na coś co tygryski lubią najbardziej, czyli [deploymenty](https://github.com/inleo-pl/Warsztat-Kubernetes-Fundamentals/blob/master/13-Deployment.md).
+
+Przykład:
+
+```
+443:31234/TCP
+```
+
+To oznacza, że Dashboard będzie dostępny pod portem `31234` na każdym węźle.
+
+---
+
+# Dostęp przez HAProxy
+
+Zaktualizuj konfigurację HAProxy, aby przepuścić ruch do nowo utworzonego NodePorta.
+
+Po aktualizacji wejdziesz na Dashboard pod adresem:
+
+```
+https://zewnetrzny.adres.twojego.haproxy:8080
+```
+
+Pamiętaj — Dashboard działa *tylko* przez HTTPS.
+
+Podczas logowania użyj tokenu pobranego wcześniej.
+
+---
+
+# Podsumowanie
+
+Poznałeś:
+
+- jak działają serwisy w Kubernetes,
+- jak zainstalować Dashboard,
+- jak utworzyć użytkownika z uprawnieniami administracyjnymi,
+- jak wystawić Dashboard do świata,
+- jak skorzystać z HAProxy, aby do niego dotrzeć.
+
+Czas na to, co najważniejsze w Kubernetes — **deploymenty**.
